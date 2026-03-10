@@ -4,59 +4,49 @@ import os
 import time
 import re
 from dotenv import load_dotenv
-from openai import OpenAI
+import google.generativeai as genai
 
 load_dotenv()
 
 cache = {}
 
 # --------------------------------------------------
-# IA GROQ
+# IA GEMINI
 # --------------------------------------------------
-
 
 class IAGroqPais:
 
     def __init__(self):
 
-        self.api_key = os.environ.get("GROQCLOUD_API_KEY")
+        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-        self.client = OpenAI(
-            api_key=self.api_key,
-            base_url="https://api.groq.com/openai/v1",
-        )
+        self.model = genai.GenerativeModel("gemini-2.0-flash")
 
     def obtener_iso3_ia(self, location):
 
         prompt = f"""
-        Determina el país del siguiente texto de ubicación de una biografía de red social.
+Determina el país del siguiente texto de ubicación de una biografía de red social.
 
-        Reglas:
-        - Si aparece una ciudad conocida, deduce su país.
-        - Si hay abreviaturas (ej: FL, BA, CABA) infiere el país.
-        - Si hay múltiples países, elige el más probable.
-        - Si realmente no se puede inferir el país responde SOLO: NONE
+Reglas:
+- Si aparece una ciudad conocida, deduce su país.
+- Si hay abreviaturas (ej: FL, BA, CABA) infiere el país.
+- Si hay múltiples países, elige el más probable.
+- Si realmente no se puede inferir el país responde SOLO: NONE
 
-        Responde SOLO con el código ISO3 del país.
+Responde SOLO con el código ISO3 del país.
 
-        Texto:
-        "{location}"
-        """
+Texto:
+"{location}"
+"""
+
         try:
 
-            response = self.client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "Eres experto en geografía y análisis de redes sociales.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0,
-            )
+            response = self.model.generate_content(prompt)
 
-            resultado = response.choices[0].message.content.strip().upper()
+            resultado = response.text.strip().upper()
+
+            # limpiar posibles respuestas del modelo
+            resultado = resultado.replace("ISO3:", "").strip()
 
             if resultado == "NONE":
                 return None
@@ -74,7 +64,6 @@ class IAGroqPais:
 # LIMPIEZA TEXTO
 # --------------------------------------------------
 
-
 def limpiar_location(location):
 
     loc = location.strip()
@@ -84,7 +73,7 @@ def limpiar_location(location):
 
     # eliminar espacios duplicados
     loc = re.sub(r"\s+", " ", loc)
-    
+
     # eliminar números de teléfono
     loc = re.sub(r"\+?\d[\d\s\-]{6,}", "", loc)
 
@@ -109,7 +98,6 @@ def es_texto_valido(location):
 # PIPELINE
 # --------------------------------------------------
 
-
 def obtener_iso3(location, ia_client):
 
     if location in cache:
@@ -131,7 +119,6 @@ def obtener_iso3(location, ia_client):
 # --------------------------------------------------
 # PROCESAR DB
 # --------------------------------------------------
-
 
 def procesar_locations():
 
