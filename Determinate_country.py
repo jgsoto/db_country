@@ -4,12 +4,15 @@ import os
 import time
 import re
 import unicodedata
+import datetime
+from datetime import timedelta
 from dotenv import load_dotenv
 from openai import OpenAI
 
 load_dotenv()
 
 cache = {}
+MAX_REGISTROS = 500
 
 # --------------------------------------------------
 # IA GROQ
@@ -169,6 +172,41 @@ def obtener_iso3(location, ia_client):
 # --------------------------------------------------
 # PROCESAR DB
 # --------------------------------------------------
+def obtener_fecha_mas_reciente(cursor):
+
+    cursor.execute(
+        """
+        SELECT DATE(MAX(extract_date))
+        FROM public.salert_basic
+        WHERE red BETWEEN 1 AND 3
+        AND location IS NOT NULL
+        AND location != ''
+        AND country IS NULL
+    """
+    )
+
+    resultado = cursor.fetchone()
+
+    if resultado and resultado[0]:
+        return resultado[0]
+
+    return None
+
+
+def obtener_horas_con_registros(cursor, fecha):
+
+    cursor.execute(
+        """
+        SELECT DISTINCT DATE_TRUNC('hour', extract_date)
+        FROM public.salert_basic
+        WHERE DATE(extract_date) = %s
+        AND country IS NULL
+        ORDER BY 1
+        """,
+        (fecha,),
+    )
+
+    return [row[0] for row in cursor.fetchall()]
 
 
 def procesar_locations():
@@ -178,66 +216,104 @@ def procesar_locations():
     conexion = conectar_db()
     cursor = conexion.cursor()
 
-    query = """
-    SELECT id, location
-    FROM public.salert_basic
-    WHERE red BETWEEN 1 AND 3
-    AND location IS NOT NULL
-    AND location != ''
-    AND country IS NULL
-    ORDER BY extract_date DESC
-    LIMIT 100
-    """
+    fecha = obtener_fecha_mas_reciente(cursor)
 
-    cursor.execute(query)
+    if not fecha:
 
-    registros = cursor.fetchall()
+        print("No hay registros pendientes")
 
-    print("Total registros:", len(registros))
+        return
+
+    print("Procesando fecha:", fecha)
+
+    horas = obtener_horas_con_registros(cursor, fecha)
+
+    print("Horas con registros:", len(horas))
 
     contador = 0
     aciertos = 0
 
     try:
 
-        for id_registro, location in registros:
+        for hora in horas:
 
-            print("Procesando:", location)
+            inicio = hora
 
-            iso3 = obtener_iso3(location, ia_client)
+            if isinstance(inicio, str):
+                inicio = datetime.fromisoformat(inicio)
 
-            print("ISO3:", iso3)
+            fin = inicio + timedelta(hours=1)
 
-            if iso3:
+            print("\nProcesando hora:", inicio)
 
-                cursor.execute(
-                    """
-                    UPDATE public.salert_basic
-                    SET country = %s
-                    WHERE id = %s
-                    """,
-                    (iso3, id_registro),
-                )
+            cursor.execute(
+                """
+                SELECT id, location
+                FROM public.salert_basic
+                WHERE red BETWEEN 1 AND 3
+                AND location IS NOT NULL
+                AND location != ''
+                AND country IS NULL
+                AND extract_date >= %s
+                AND extract_date < %s
+                """,
+                (inicio, fin),
+            )
 
-                aciertos += 1
+            registros = cursor.fetchall()
 
-            contador += 1
+            print("Registros encontrados:", len(registros))
 
-            if contador % 100 == 0:
+            for id_registro, location in registros:
 
-                conexion.commit()
+                if contador >= MAX_REGISTROS:
 
-                print("Commit lote:", contador)
+                    print("\nLímite alcanzado:", MAX_REGISTROS)
 
-            time.sleep(0.2)
+                    conexion.commit()
+
+                    print("Proceso detenido de forma segura")
+
+                    return
+
+                print("Procesando:", location)
+
+                iso3 = obtener_iso3(location, ia_client)
+
+                print("ISO3:", iso3)
+
+                if iso3:
+
+                    cursor.execute(
+                        """
+                        UPDATE public.salert_basic
+                        SET country = %s
+                        WHERE id = %s
+                        """,
+                        (iso3, id_registro),
+                    )
+
+                    aciertos += 1
+
+                contador += 1
+
+                if contador % 100 == 0:
+
+                    conexion.commit()
+
+                    print("Commit lote:", contador)
+
+                time.sleep(0.2)
 
         conexion.commit()
 
-        print("Proceso terminado")
+        print("\nProceso terminado")
 
-        efectividad = (aciertos / contador) * 100
+        if contador > 0:
 
-        print(f"Efectividad aproximada: {efectividad:.2f}%")
+            efectividad = (aciertos / contador) * 100
+
+            print(f"Efectividad aproximada: {efectividad:.2f}%")
 
     except Exception as e:
 
