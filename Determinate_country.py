@@ -3,6 +3,7 @@ import pycountry
 import os
 import time
 import re
+import unicodedata
 from dotenv import load_dotenv
 from openai import OpenAI
 
@@ -28,41 +29,38 @@ class IAGroqPais:
 
     def obtener_iso3_ia(self, location):
 
+        # PROMPT ULTRA OPTIMIZADO
         prompt = f"""
-        Determina el país del siguiente texto de ubicación de una biografía de red social.
+        Infer the country from this social media location.
+        Use cities, regions, or abbreviations if present.
+        If impossible return NONE.
 
-        Reglas:
-        - Si aparece una ciudad conocida, deduce su país.
-        - Si hay abreviaturas (ej: FL, BA, CABA) infiere el país.
-        - Si hay múltiples países, elige el más probable.
-        - Si realmente no se puede inferir el país responde SOLO: NONE
+        Return ONLY the ISO3 code.
 
-        Responde SOLO con el código ISO3 del país.
-
-        Texto:
-        "{location}"
+        Location: "{location}"
         """
         try:
 
             response = self.client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "Eres experto en geografía y análisis de redes sociales.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
+                messages=[{"role": "user", "content": prompt}],
                 temperature=0,
+                max_tokens=4,
             )
 
             resultado = response.choices[0].message.content.strip().upper()
 
-            if resultado == "NONE":
-                return None
+            # Buscar código ISO3 válido
+            match = re.search(r"\b[A-Z]{3}\b", resultado)
 
-            if pycountry.countries.get(alpha_3=resultado):
-                return resultado
+            if match:
+                iso3 = match.group(0)
+
+                if pycountry.countries.get(alpha_3=iso3):
+                    return iso3
+
+            if "NONE" in resultado:
+                return None
 
         except Exception as e:
             print("Error IA:", e)
@@ -75,6 +73,15 @@ class IAGroqPais:
 # --------------------------------------------------
 
 
+def quitar_acentos(texto):
+
+    return "".join(
+        c
+        for c in unicodedata.normalize("NFD", texto)
+        if unicodedata.category(c) != "Mn"
+    )
+
+
 def limpiar_location(location):
 
     loc = location.strip()
@@ -82,11 +89,17 @@ def limpiar_location(location):
     # eliminar emojis
     loc = re.sub(r"[^\w\s,.-]", "", loc)
 
+    # eliminar acentos
+    loc = quitar_acentos(loc)
+
     # eliminar espacios duplicados
     loc = re.sub(r"\s+", " ", loc)
-    
+
     # eliminar números de teléfono
     loc = re.sub(r"\+?\d[\d\s\-]{6,}", "", loc)
+
+    # eliminar direcciones
+    loc = re.sub(r"#\d+", "", loc)
 
     return loc
 
@@ -106,6 +119,23 @@ def es_texto_valido(location):
 
 
 # --------------------------------------------------
+# DETECCIÓN DIRECTA DE PAÍS (sin IA)
+# --------------------------------------------------
+
+
+def detectar_pais_directo(location):
+
+    loc_lower = location.lower()
+
+    for country in pycountry.countries:
+
+        if country.name.lower() in loc_lower:
+            return country.alpha_3
+
+    return None
+
+
+# --------------------------------------------------
 # PIPELINE
 # --------------------------------------------------
 
@@ -121,6 +151,14 @@ def obtener_iso3(location, ia_client):
         cache[location] = None
         return None
 
+    # intentar detectar país sin IA
+    iso3_directo = detectar_pais_directo(loc_limpia)
+
+    if iso3_directo:
+        cache[location] = iso3_directo
+        return iso3_directo
+
+    # usar IA
     iso3 = ia_client.obtener_iso3_ia(loc_limpia)
 
     cache[location] = iso3
@@ -191,7 +229,7 @@ def procesar_locations():
 
                 print("Commit lote:", contador)
 
-            time.sleep(0.3)
+            time.sleep(0.2)
 
         conexion.commit()
 
