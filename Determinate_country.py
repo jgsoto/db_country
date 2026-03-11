@@ -163,7 +163,6 @@ def procesar_locations():
         return
 
     contador = 0
-    aciertos = 0
 
     try:
         for fecha in fechas:
@@ -209,7 +208,6 @@ def procesar_locations():
                             """,
                             (iso3, id_registro),
                         )
-                        aciertos += 1
 
                     contador += 1
 
@@ -233,9 +231,6 @@ def procesar_locations():
         # Commit final al terminar todas las fechas
         conexion.commit()
         print("\nProceso terminado")
-        if contador > 0:
-            efectividad = (aciertos / contador) * 100
-            print(f"Efectividad aproximada: {efectividad:.2f}%")
 
     except Exception as e:
         print("Error:", e)
