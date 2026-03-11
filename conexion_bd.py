@@ -7,7 +7,6 @@ load_dotenv()
 
 def conectar_db():
     try:
-        # Establecer la conexión
         conexion = psycopg2.connect(
             host=os.getenv('DB_HOST'),
             database=os.getenv('DB_NAME'),
@@ -15,21 +14,27 @@ def conectar_db():
             password=os.getenv('DB_PASS'),
             port=os.getenv('DB_PORT')
         )
-        
-        cursor = conexion.cursor()
+
         print("¡Conexión exitosa a PostgreSQL!")
 
-        # Ejemplo: Ejecutar una consulta
-        cursor.execute('SELECT version();')
+        # Mostrar versión (opcional)
+        cursor = conexion.cursor()
+        cursor.execute("SELECT version();")
         db_version = cursor.fetchone()
-        print(f"Versión del servidor: {db_version}")
+        print("Versión del servidor:", db_version)
 
-        # Cerrar herramientas
         cursor.close()
-        conexion.close()
+
+        return conexion   # 🔑 IMPORTANTE
 
     except Exception as error:
         print(f"Error al conectar: {error}")
+        return None
+
 
 if __name__ == "__main__":
-    conectar_db()
+    conexion = conectar_db()
+
+    if conexion:
+        print("Conexión lista para usarse")
+        conexion.close()
