@@ -200,14 +200,18 @@ def procesar_locations():
                     print("ISO3:", iso3)
 
                     if iso3:
-                        cursor.execute(
-                            """
-                            UPDATE public.salert_basic
-                            SET country = %s
-                            WHERE id = %s
-                            """,
-                            (iso3, id_registro),
-                        )
+                        valor_country = iso3
+                    else:
+                        valor_country = "UNK"
+
+                    cursor.execute(
+                        """
+                        UPDATE public.salert_basic
+                        SET country = %s
+                        WHERE id = %s
+                        """,
+                        (valor_country, id_registro),
+                    )
 
                     contador += 1
 
