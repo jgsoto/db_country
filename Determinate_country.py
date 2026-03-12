@@ -17,7 +17,7 @@ def obtener_fechas_pendientes(cursor):
           AND location IS NOT NULL
           AND location != ''
           AND country IS NULL
-        ORDER BY 1
+        ORDER BY 1 DESC
         """
     )
 
@@ -31,7 +31,7 @@ def obtener_horas_con_registros(cursor, fecha):
         FROM public.salert_basic
         WHERE DATE(extract_date) = %s
           AND country IS NULL
-        ORDER BY 1
+        ORDER BY 1 DESC
         """,
         (fecha,),
     )
@@ -82,6 +82,7 @@ def procesar_locations():
                       AND country IS NULL
                       AND extract_date >= %s
                       AND extract_date < %s
+                    ORDER BY extract_date DESC
                     """,
                     (inicio, fin),
                 )

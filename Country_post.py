@@ -1,27 +1,22 @@
 from conexion_bd import conectar_db
 from datetime import timedelta, datetime
 
-
-# -----------------------------------------
-# OBTENER FECHAS PENDIENTES
-# -----------------------------------------
 def obtener_fechas_pendientes(cursor):
 
     cursor.execute(
         """
-        SELECT DISTINCT DATE(extract_date)
-        FROM public.salert_basic
-        WHERE country IS NOT NULL
-        ORDER BY 1
+        SELECT DISTINCT DATE(b.extract_date)
+        FROM public.salert_basic b
+        JOIN public.salert_post_temp p
+        ON p.page_id = b.id
+        WHERE b.country IS NOT NULL
+        AND p.pais IS NULL
+        ORDER BY 1 DESC
         """
     )
 
     return [row[0] for row in cursor.fetchall()]
 
-
-# -----------------------------------------
-# OBTENER HORAS
-# -----------------------------------------
 def obtener_horas(cursor, fecha):
 
     cursor.execute(
@@ -30,17 +25,13 @@ def obtener_horas(cursor, fecha):
         FROM public.salert_basic
         WHERE DATE(extract_date) = %s
         AND country IS NOT NULL
-        ORDER BY 1
+        ORDER BY 1 DESC
         """,
         (fecha,),
     )
 
     return [row[0] for row in cursor.fetchall()]
 
-
-# -----------------------------------------
-# SINCRONIZAR
-# -----------------------------------------
 def sincronizar_post():
 
     conexion = conectar_db()
@@ -110,7 +101,5 @@ def sincronizar_post():
         cursor.close()
         conexion.close()
 
-
-# -----------------------------------------
 if __name__ == "__main__":
     sincronizar_post()
