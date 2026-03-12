@@ -71,7 +71,7 @@ def procesar_locations():
     AND location != ''
     AND country IS NULL
     ORDER BY extract_date DESC
-    LIMIT 100
+    LIMIT 500
     """
 
     cursor.execute(query)

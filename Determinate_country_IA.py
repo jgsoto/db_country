@@ -1,20 +1,17 @@
 from conexion_bd import conectar_db
 import pycountry
 import os
-import time
 import re
-import unicodedata
 from dotenv import load_dotenv
 from openai import OpenAI
 
 load_dotenv()
 
-cache = {}
+cache_memoria = {}
 
 # --------------------------------------------------
 # IA GROQ
 # --------------------------------------------------
-
 
 class IAGroqPais:
 
@@ -29,38 +26,31 @@ class IAGroqPais:
 
     def obtener_iso3_ia(self, location):
 
-        # PROMPT ULTRA OPTIMIZADO
         prompt = f"""
-        Infer the country from this social media location.
-        Use cities, regions, or abbreviations if present.
-        If impossible return NONE.
+Return the ISO3 country code for this social media location text.
+If the country cannot be inferred return NONE.
 
-        Return ONLY the ISO3 code.
+Text: {location}
+"""
 
-        Location: "{location}"
-        """
         try:
 
             response = self.client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
-                messages=[{"role": "user", "content": prompt}],
+                messages=[
+                    {"role": "system", "content": "Return only ISO3 country code."},
+                    {"role": "user", "content": prompt},
+                ],
                 temperature=0,
-                max_tokens=4,
             )
 
             resultado = response.choices[0].message.content.strip().upper()
 
-            # Buscar código ISO3 válido
-            match = re.search(r"\b[A-Z]{3}\b", resultado)
-
-            if match:
-                iso3 = match.group(0)
-
-                if pycountry.countries.get(alpha_3=iso3):
-                    return iso3
-
-            if "NONE" in resultado:
+            if resultado == "NONE":
                 return None
+
+            if pycountry.countries.get(alpha_3=resultado):
+                return resultado
 
         except Exception as e:
             print("Error IA:", e)
@@ -72,34 +62,13 @@ class IAGroqPais:
 # LIMPIEZA TEXTO
 # --------------------------------------------------
 
-
-def quitar_acentos(texto):
-
-    return "".join(
-        c
-        for c in unicodedata.normalize("NFD", texto)
-        if unicodedata.category(c) != "Mn"
-    )
-
-
 def limpiar_location(location):
 
     loc = location.strip()
 
-    # eliminar emojis
     loc = re.sub(r"[^\w\s,.-]", "", loc)
-
-    # eliminar acentos
-    loc = quitar_acentos(loc)
-
-    # eliminar espacios duplicados
     loc = re.sub(r"\s+", " ", loc)
-
-    # eliminar números de teléfono
     loc = re.sub(r"\+?\d[\d\s\-]{6,}", "", loc)
-
-    # eliminar direcciones
-    loc = re.sub(r"#\d+", "", loc)
 
     return loc
 
@@ -119,49 +88,70 @@ def es_texto_valido(location):
 
 
 # --------------------------------------------------
-# DETECCIÓN DIRECTA DE PAÍS (sin IA)
+# CACHE BD
 # --------------------------------------------------
 
+def buscar_cache(cursor, location):
 
-def detectar_pais_directo(location):
+    cursor.execute(
+        """
+        SELECT iso3
+        FROM location_iso_cache
+        WHERE location = %s
+        """,
+        (location,),
+    )
 
-    loc_lower = location.lower()
+    resultado = cursor.fetchone()
 
-    for country in pycountry.countries:
-
-        if country.name.lower() in loc_lower:
-            return country.alpha_3
+    if resultado:
+        return resultado[0]
 
     return None
 
 
+def guardar_cache(cursor, location, iso3):
+
+    cursor.execute(
+        """
+        INSERT INTO location_iso_cache (location, iso3)
+        VALUES (%s,%s)
+        ON CONFLICT (location)
+        DO NOTHING
+        """,
+        (location, iso3),
+    )
+
+
 # --------------------------------------------------
-# PIPELINE
+# PIPELINE ISO3
 # --------------------------------------------------
 
-
-def obtener_iso3(location, ia_client):
-
-    if location in cache:
-        return cache[location]
+def obtener_iso3(location, ia_client, cursor):
 
     loc_limpia = limpiar_location(location)
 
+    if loc_limpia in cache_memoria:
+        return cache_memoria[loc_limpia]
+
     if not es_texto_valido(loc_limpia):
-        cache[location] = None
+        cache_memoria[loc_limpia] = None
         return None
 
-    # intentar detectar país sin IA
-    iso3_directo = detectar_pais_directo(loc_limpia)
+    # buscar en cache BD
+    iso3_cache = buscar_cache(cursor, loc_limpia)
 
-    if iso3_directo:
-        cache[location] = iso3_directo
-        return iso3_directo
+    if iso3_cache:
+        print("ISO3 cache BD:", iso3_cache)
+        cache_memoria[loc_limpia] = iso3_cache
+        return iso3_cache
 
-    # usar IA
+    # llamar IA
     iso3 = ia_client.obtener_iso3_ia(loc_limpia)
 
-    cache[location] = iso3
+    guardar_cache(cursor, loc_limpia, iso3)
+
+    cache_memoria[loc_limpia] = iso3
 
     return iso3
 
@@ -169,7 +159,6 @@ def obtener_iso3(location, ia_client):
 # --------------------------------------------------
 # PROCESAR DB
 # --------------------------------------------------
-
 
 def procesar_locations():
 
@@ -179,42 +168,31 @@ def procesar_locations():
     cursor = conexion.cursor()
 
     query = """
-    SELECT id, location
+    SELECT DISTINCT location
     FROM public.salert_basic
     WHERE red BETWEEN 1 AND 3
     AND location IS NOT NULL
     AND location != ''
     AND country IS NULL
-    AND date_trunc('hour', extract_date) = (
-    SELECT date_trunc('hour', extract_date)
-    FROM public.salert_basic
-    WHERE red BETWEEN 1 AND 3
-    AND location IS NOT NULL
-    AND location != ''
-    AND country IS NULL
-    GROUP BY date_trunc('hour', extract_date)
-    ORDER BY date_trunc('hour', extract_date) DESC
-    LIMIT 1
-    )
-    ORDER BY extract_date DESC
+    LIMIT 1000
     """
 
     cursor.execute(query)
 
-    registros = cursor.fetchall()
+    locations = cursor.fetchall()
 
-    print("Total registros:", len(registros))
+    print("Locations únicas encontradas:", len(locations))
 
-    contador = 0
+    procesadas = 0
     aciertos = 0
 
     try:
 
-        for id_registro, location in registros:
+        for (location,) in locations:
 
-            print("Procesando:", location)
+            print("\nProcesando:", location)
 
-            iso3 = obtener_iso3(location, ia_client)
+            iso3 = obtener_iso3(location, ia_client, cursor)
 
             print("ISO3:", iso3)
 
@@ -224,28 +202,27 @@ def procesar_locations():
                     """
                     UPDATE public.salert_basic
                     SET country = %s
-                    WHERE id = %s
+                    WHERE location = %s
+                    AND country IS NULL
                     """,
-                    (iso3, id_registro),
+                    (iso3, location),
                 )
 
                 aciertos += 1
 
-            contador += 1
+            procesadas += 1
 
-            if contador % 100 == 0:
+            if procesadas % 50 == 0:
 
                 conexion.commit()
 
-                print("Commit lote:", contador)
-
-            time.sleep(0.2)
+                print("Commit lote:", procesadas)
 
         conexion.commit()
 
-        print("Proceso terminado")
+        print("\nProceso terminado")
 
-        efectividad = (aciertos / contador) * 100
+        efectividad = (aciertos / procesadas) * 100
 
         print(f"Efectividad aproximada: {efectividad:.2f}%")
 
@@ -262,6 +239,10 @@ def procesar_locations():
         cursor.close()
         conexion.close()
 
+
+# --------------------------------------------------
+# MAIN
+# --------------------------------------------------
 
 if __name__ == "__main__":
     procesar_locations()
