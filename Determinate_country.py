@@ -195,6 +195,7 @@ def procesar_locations():
                 print("Registros encontrados:", len(registros))
 
                 for id_registro, location in registros:
+
                     print("Procesando:", location)
                     iso3 = obtener_iso3(location, ia_client)
                     print("ISO3:", iso3)
@@ -210,23 +211,11 @@ def procesar_locations():
                         )
 
                     contador += 1
-
-                    # Commit y pregunta cada 100 registros
-                    if contador % 100 == 0:
-                        conexion.commit()
-                        print(f"\nCommit completado: {contador} registros procesados")
-                        respuesta = (
-                            input("¿Desea continuar procesando? (s/n): ")
-                            .strip()
-                            .lower()
-                        )
-                        if respuesta != "s":
-                            print("Proceso detenido por el usuario")
-                            cursor.close()
-                            conexion.close()
-                            return
-
                     time.sleep(0.2)
+
+                # 🔹 commit después de terminar la hora
+                conexion.commit()
+                print(f"Commit realizado para la hora {inicio}")
 
         # Commit final al terminar todas las fechas
         conexion.commit()
