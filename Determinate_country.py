@@ -3,6 +3,7 @@ from datetime import timedelta, datetime
 from dotenv import load_dotenv
 from country_ia import IAGroqPais
 from country_clean import obtener_iso3
+from Country_post import sincronizar_posts_por_hora
 import time
 
 load_dotenv()
@@ -117,6 +118,8 @@ def procesar_locations():
                 conexion.commit()
 
                 print(f"Commit realizado para la hora {inicio}")
+                
+                sincronizar_posts_por_hora(cursor, inicio, fin)
 
         conexion.commit()
 
