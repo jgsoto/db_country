@@ -157,39 +157,10 @@ def procesar_locations():
     conexion = conectar_db()
     cursor = conexion.cursor()
 
-<<<<<<< HEAD
-    query = """
-    SELECT id, location
-    FROM public.salert_basic
-    WHERE red BETWEEN 1 AND 3
-    AND location IS NOT NULL
-    AND location != ''
-    AND country IS NULL
-    AND date_trunc('hour', extract_date) = (
-    SELECT date_trunc('hour', extract_date)
-    FROM public.salert_basic
-    WHERE red BETWEEN 1 AND 3
-    AND location IS NOT NULL
-    AND location != ''
-    AND country IS NULL
-    GROUP BY date_trunc('hour', extract_date)
-    ORDER BY date_trunc('hour', extract_date) DESC
-    LIMIT 1
-    )
-    ORDER BY extract_date DESC
-    """
-
-    cursor.execute(query)
-
-    registros = cursor.fetchall()
-
-    print("Total registros:", len(registros))
-=======
     fechas = obtener_fechas_pendientes(cursor)
     if not fechas:
         print("No hay registros pendientes")
         return
->>>>>>> 801162837ec7981a0ff3742d740e3acf0f6a3444
 
     contador = 0
 
