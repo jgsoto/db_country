@@ -6,99 +6,135 @@ This project processes social media records stored in PostgreSQL and determines 
 
 The detected country is stored as an **ISO3 country code**.
 
-The pipeline works in two stages:
+The pipeline performs two operations:
 
-1. **Country detection**
+1. **Country detection**  
    Determines the country from the `location` field and stores it in `salert_basic.country`.
 
-2. **Post synchronization**
-   Copies the detected country into the `salert_post_temp.pais` field for related posts.
+2. **Post synchronization**  
+   After each processed hour, the detected country is copied into `salert_post_temp.pais` for related posts.
 
-The system processes records **starting from the most recent dates** and works in **hourly batches** for efficiency and reliability.
+The system processes records **starting from the most recent dates** and works in **hourly batches** to improve performance, consistency, and recovery in case of failure.
 
 ---
 
 # Project Structure
 
-```
+
 project/
 │
-├── conexion_bd.py
-├── country_ia.py
-├── country_clean.py
-├── procesar_locations.py
-├── sincronizar_post.py
+├── conexion_bd.py # PostgreSQL connection
+├── country_ia.py # AI inference for country detection
+├── country_clean.py # Location cleaning and validation
+├── Determinate_country.py # Main pipeline script
+├── Country_post.py # Post country synchronization
+│
+├── Dockerfile
+├── docker-compose.yml
 ├── requirements.txt
 └── .env
-```
+
 
 ---
 
 # Pipeline Architecture
 
-```
+
 location
-   ↓
-cleaning & validation
-   ↓
+↓
+text cleaning
+↓
+location validation
+↓
 direct country detection (pycountry)
-   ↓
+↓
 AI inference (Groq LLM)
-   ↓
+↓
 ISO3 country code
-   ↓
+↓
 stored in salert_basic.country
-   ↓
-synchronized to salert_post_temp.pais
-```
+↓
+hourly synchronization
+↓
+stored in salert_post.pais
+
+
+---
+
+# Processing Strategy
+
+The pipeline processes data using the following strategy:
+
+- **Most recent dates first**
+- **Hourly processing batches**
+- **Commit after each hour**
+- **Post synchronization after each hour**
+
+This approach ensures:
+
+- Reduced memory usage
+- Better error recovery
+- Incremental data updates
+- Reliable long-running execution
 
 ---
 
 # Scripts
 
-## 1. procesar_locations.py
+## 1. Determinate_country.py
 
-Detects the country from the `location` field and updates the table:
+Main pipeline script.
 
-```
+This script:
+
+1. Retrieves dates with pending country detection.
+2. Processes records **from the most recent date to the oldest**.
+3. Splits records into **hourly batches**.
+4. Cleans and analyzes the `location` field.
+5. Determines the country using a multi-step strategy.
+6. Updates `salert_basic.country`.
+7. Synchronizes related posts in `salert_post`.
+
+Table updated:
+
+
 public.salert_basic
-```
 
-Steps:
-
-1. Find records where `country IS NULL`
-2. Process **most recent dates first**
-3. Split processing **by hour**
-4. Clean and analyze `location`
-5. Detect country
-6. Update `country` column
 
 Detection strategy:
 
-1. Clean text
-2. Validate location
+1. Location cleaning
+2. Location validation
 3. Direct detection using `pycountry`
 4. AI inference using Groq LLM
 
+If the country cannot be determined, the value:
+
+
+UNK
+
+
+is stored.
+
 ---
 
-## 2. sincronizar_post.py
+## 2. country_post.py
 
-Copies the detected country to the related posts table.
+Synchronizes the detected country into the related posts table.
 
 Updates:
 
-```
+
 public.salert_post_temp.pais
-```
 
-Using:
 
-```
+Using the relationship:
+
+
 salert_post_temp.page_id = salert_basic.id
-```
 
-This ensures posts inherit the country already determined for their page.
+
+This ensures that posts inherit the country already determined for their page.
 
 ---
 
@@ -106,7 +142,7 @@ This ensures posts inherit the country already determined for their page.
 
 Create a `.env` file with the following variables:
 
-```
+
 DB_HOST=localhost
 DB_NAME=database_name
 DB_USER=username
@@ -114,7 +150,6 @@ DB_PASS=password
 DB_PORT=5432
 
 GROQCLOUD_API_KEY=your_api_key
-```
 
 ---
 
@@ -122,93 +157,93 @@ GROQCLOUD_API_KEY=your_api_key
 
 Clone the repository:
 
-```
+
 git clone <repo_url>
 cd project
-```
 
-Create virtual environment:
 
-```
+Create a virtual environment:
+
+
 python -m venv venv
-```
+
 
 Activate it:
 
-Windows:
+**Windows**
 
-```
+
 venv\Scripts\activate
-```
 
-Linux / Mac:
 
-```
+**Linux / Mac**
+
+
 source venv/bin/activate
-```
+
 
 Install dependencies:
 
-```
+
 pip install -r requirements.txt
-```
+
 
 ---
 
-# Usage
+# Running the Pipeline
 
-## Step 1 — Detect countries
+Run the main pipeline:
 
-```
-python procesar_locations.py
-```
 
-This will populate:
+python Determinate_country.py
 
-```
-salert_basic.country
-```
+
+This script will:
+
+1. Detect countries from `location`
+2. Update `salert_basic.country`
+3. Synchronize results to `salert_post.pais`
 
 ---
 
-## Step 2 — Synchronize posts
+# Running with Docker
 
-```
-python sincronizar_post.py
-```
+Build and run the container:
 
-This will populate:
 
-```
-salert_post_temp.pais
-```
+docker compose up --build
+
+
+The container will execute the pipeline automatically.
 
 ---
 
 # Features
 
-* ISO3 country detection
-* Location text cleaning
-* AI fallback for ambiguous locations
-* In-memory cache to reduce AI calls
-* Processing by **hour batches**
-* Processes **most recent records first**
-* PostgreSQL integration
+- ISO3 country detection
+- Location text cleaning
+- AI fallback for ambiguous locations
+- In-memory cache to reduce AI calls
+- Hourly batch processing
+- Processes **most recent records first**
+- Automatic synchronization of related posts
+- PostgreSQL integration
+- Docker support
 
 ---
 
 # Dependencies
 
-* psycopg2
-* python-dotenv
-* pycountry
-* openai
+- psycopg2
+- python-dotenv
+- pycountry
+- openai
 
 ---
 
 # Example Output
 
-```
+
 Procesando fecha: 2025-07-17
 Horas con registros: 2
 
@@ -220,10 +255,6 @@ ISO3: ESP
 
 Procesando: Guayaquil
 ISO3: ECU
-```
 
----
-
-# Author
-
-Data pipeline for automated **country inference from social media locations**.
+Commit realizado para la hora 2025-07-17 15:00:00
+Sincronización completada
