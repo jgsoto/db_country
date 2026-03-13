@@ -1,0 +1,10 @@
+version: "3.9"
+
+services:
+
+  country-pipeline:
+    build: .
+    container_name: country_pipeline
+    env_file:
+      - .env
+    restart: unless-stopped
