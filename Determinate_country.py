@@ -92,14 +92,16 @@ def procesar_locations():
                 print("Registros encontrados:", len(registros))
 
                 for id_registro, location in registros:
-
                     print("Procesando:", location)
-
                     iso3 = obtener_iso3(location, ia_client)
-
                     print("ISO3:", iso3)
 
                     if iso3:
+                        valor_country = iso3
+                    else:
+                        valor_country = "UNK"
+                        
+                    if valor_country:
 
                         cursor.execute(
                             """
@@ -107,7 +109,7 @@ def procesar_locations():
                             SET country = %s
                             WHERE id = %s
                             """,
-                            (iso3, id_registro),
+                            (valor_country, id_registro),
                         )
 
                     time.sleep(0.2)
